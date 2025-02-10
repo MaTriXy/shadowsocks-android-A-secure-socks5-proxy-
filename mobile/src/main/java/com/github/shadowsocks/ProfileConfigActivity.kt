@@ -21,30 +21,51 @@
 package com.github.shadowsocks
 
 import android.app.Activity
-import android.content.Intent
+import android.content.DialogInterface
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.component1
+import androidx.activity.result.component2
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.github.shadowsocks.plugin.PluginContract
+import com.github.shadowsocks.plugin.fragment.AlertDialogFragment
+import com.github.shadowsocks.plugin.fragment.Empty
 import com.github.shadowsocks.preference.DataStore
+import com.github.shadowsocks.widget.ListHolderListener
 
 class ProfileConfigActivity : AppCompatActivity() {
-    companion object {
-        const val REQUEST_CODE_PLUGIN_HELP = 1
+    class UnsavedChangesDialogFragment : AlertDialogFragment<Empty, Empty>() {
+        override fun AlertDialog.Builder.prepare(listener: DialogInterface.OnClickListener) {
+            setTitle(R.string.unsaved_changes_prompt)
+            setPositiveButton(R.string.yes, listener)
+            setNegativeButton(R.string.no, listener)
+            setNeutralButton(android.R.string.cancel, null)
+        }
     }
 
-    private val child by lazy { supportFragmentManager.findFragmentById(R.id.content) as ProfileConfigFragment }
+    val unsavedChangesHandler = object : OnBackPressedCallback(DataStore.dirty) {
+        override fun handleOnBackPressed() = UnsavedChangesDialogFragment().apply {
+            key()
+        }.show(supportFragmentManager, null)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.layout_profile_config)
+        ListHolderListener.setup(this)
         setSupportActionBar(findViewById(R.id.toolbar))
         supportActionBar!!.apply {
             setDisplayHomeAsUpEnabled(true)
             setHomeAsUpIndicator(R.drawable.ic_navigation_close)
         }
+        onBackPressedDispatcher.addCallback(unsavedChangesHandler)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        unsavedChangesHandler.isEnabled = DataStore.dirty
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -52,25 +73,9 @@ class ProfileConfigActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        menuInflater.inflate(R.menu.profile_config_menu, menu)
-        return true
-    }
-    override fun onOptionsItemSelected(item: MenuItem?) = child.onOptionsItemSelected(item)
-
-    override fun onBackPressed() {
-        if (DataStore.dirty) AlertDialog.Builder(this)
-                .setTitle(R.string.unsaved_changes_prompt)
-                .setPositiveButton(R.string.yes) { _, _ -> child.saveAndExit() }
-                .setNegativeButton(R.string.no) { _, _ -> finish() }
-                .setNeutralButton(android.R.string.cancel, null)
-                .create()
-                .show() else super.onBackPressed()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != REQUEST_CODE_PLUGIN_HELP) super.onActivityResult(requestCode, resultCode, data)
-        else if (resultCode == Activity.RESULT_OK) AlertDialog.Builder(this)
+    val pluginHelp = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        (resultCode, data) ->
+        if (resultCode == Activity.RESULT_OK) AlertDialog.Builder(this)
                 .setTitle("?")
                 .setMessage(data?.getCharSequenceExtra(PluginContract.EXTRA_HELP_MESSAGE))
                 .show()
